@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cmath>
 #include "esphome/core/component.h"
+#include "esphome/core/automation.h"
 #include "esphome/core/hal.h"
 #include "esphome/components/spi/spi.h"
 #include "esphome/components/sensor/sensor.h"
@@ -97,8 +99,11 @@ static const uint8_t REG_GAIN2 = 0x61;     // PGA gain channels 6-10
 static const uint8_t REG_MODE1 = 0x96;     // Mode register 1
 static const uint8_t REG_MODE = 0x98;      // Mode register
 
+static const uint8_t REG_MASK1 = 0x9A;       // IRQ1 mask register
 static const uint8_t REG_USR_WRPROT = 0x9E;  // Write protection
 static const uint8_t REG_SOFT_RESET = 0x9F;  // Soft reset
+
+static const uint8_t REG_STATUS1 = 0x54;     // Interrupt status flags
 
 // SPI Commands
 static const uint8_t SPI_READ_CMD = 0x82;
@@ -171,6 +176,23 @@ class BL0910Component : public PollingComponent,
       this->power_factor_sensors_[channel] = sensor;
   }
 
+  // Public reset methods
+  void hardware_reset();
+  void reinitialize();
+  bool write_irq_mask(uint32_t mask);
+
+  // Cached measurement getters (populated every update cycle)
+  bool is_initialized() const { return this->initialized_; }
+  float get_voltage_rms() const { return this->cached_voltage_rms_; }
+  float get_current_rms(uint8_t channel) const {
+    return (channel < NUM_CHANNELS) ? this->cached_current_rms_[channel] : NAN;
+  }
+  float get_active_power(uint8_t channel) const {
+    return (channel < NUM_CHANNELS) ? this->cached_active_power_[channel] : NAN;
+  }
+  float get_total_active_power() const { return this->cached_total_active_power_; }
+  float get_frequency() const { return this->cached_frequency_; }
+
  protected:
   // SPI communication methods
   bool read_register_(uint8_t reg, uint32_t &value);
@@ -222,6 +244,13 @@ class BL0910Component : public PollingComponent,
   float accumulated_energy_[NUM_CHANNELS]{0.0f};
   float accumulated_energy_total_{0.0f};
 
+  // Cached measurements (always populated in update, regardless of sensor config)
+  float cached_voltage_rms_{NAN};
+  float cached_current_rms_[NUM_CHANNELS]{};
+  float cached_active_power_[NUM_CHANNELS]{};
+  float cached_total_active_power_{NAN};
+  float cached_frequency_{NAN};
+
   // State
   bool initialized_{false};
   
@@ -229,6 +258,12 @@ class BL0910Component : public PollingComponent,
   const char *error_reason_{nullptr};
   uint8_t last_failed_register_{0};
   uint8_t last_rx_data_[4]{0};
+};
+
+template<typename... Ts>
+class ResetAction : public Action<Ts...>, public Parented<BL0910Component> {
+ public:
+  void play(Ts... x) override { this->parent_->hardware_reset(); }
 };
 
 }  // namespace bl0910

@@ -10,6 +10,11 @@ void BL0910Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up BL0910...");
   this->spi_setup();
 
+  for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
+    this->cached_current_rms_[i] = NAN;
+    this->cached_active_power_[i] = NAN;
+  }
+
   if (this->irq_pin_ != nullptr) {
     this->irq_pin_->setup();
   }
@@ -88,45 +93,45 @@ void BL0910Component::update() {
 
   uint32_t raw;
 
-  // Voltage: RMS[11] at 0x16
-  if (this->voltage_sensor_ != nullptr) {
-    if (this->read_register_(REG_RMS_11, raw)) {
-      this->voltage_sensor_->publish_state(this->convert_voltage_(raw));
-    }
+  // Voltage RMS -- always read and cache
+  if (this->read_register_(REG_RMS_11, raw)) {
+    this->cached_voltage_rms_ = this->convert_voltage_(raw);
+    if (this->voltage_sensor_ != nullptr)
+      this->voltage_sensor_->publish_state(this->cached_voltage_rms_);
   }
 
-  // Current per channel: RMS[1-10] at 0x0C-0x15
+  // Current RMS per channel -- always read and cache
   for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-    if (this->current_sensors_[i] != nullptr) {
-      if (this->read_register_(REG_RMS_1 + i, raw)) {
-        this->current_sensors_[i]->publish_state(this->convert_current_(raw));
-      }
+    if (this->read_register_(REG_RMS_1 + i, raw)) {
+      this->cached_current_rms_[i] = this->convert_current_(raw);
+      if (this->current_sensors_[i] != nullptr)
+        this->current_sensors_[i]->publish_state(this->cached_current_rms_[i]);
     }
   }
 
-  // Active power per channel: WATT[1-10] at 0x22-0x2B (signed 24-bit)
+  // Active power per channel -- always read and cache (signed 24-bit)
   for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-    if (this->power_sensors_[i] != nullptr) {
-      if (this->read_register_(REG_WATT_1 + i, raw)) {
-        int32_t signed_raw = static_cast<int32_t>(raw);
-        if (signed_raw & 0x800000)
-          signed_raw |= static_cast<int32_t>(0xFF000000);
-        this->power_sensors_[i]->publish_state(this->convert_power_(signed_raw));
-      }
-    }
-  }
-
-  // Total active power: WATT_TOTAL at 0x2C (signed 24-bit)
-  if (this->total_power_sensor_ != nullptr) {
-    if (this->read_register_(REG_WATT_TOTAL, raw)) {
+    if (this->read_register_(REG_WATT_1 + i, raw)) {
       int32_t signed_raw = static_cast<int32_t>(raw);
       if (signed_raw & 0x800000)
         signed_raw |= static_cast<int32_t>(0xFF000000);
-      this->total_power_sensor_->publish_state(this->convert_power_(signed_raw));
+      this->cached_active_power_[i] = this->convert_power_(signed_raw);
+      if (this->power_sensors_[i] != nullptr)
+        this->power_sensors_[i]->publish_state(this->cached_active_power_[i]);
     }
   }
 
-  // Energy counters per channel: CF_CNT[1-10] at 0x2F-0x38 (delta accumulation)
+  // Total active power -- always read and cache (signed 24-bit)
+  if (this->read_register_(REG_WATT_TOTAL, raw)) {
+    int32_t signed_raw = static_cast<int32_t>(raw);
+    if (signed_raw & 0x800000)
+      signed_raw |= static_cast<int32_t>(0xFF000000);
+    this->cached_total_active_power_ = this->convert_power_(signed_raw);
+    if (this->total_power_sensor_ != nullptr)
+      this->total_power_sensor_->publish_state(this->cached_total_active_power_);
+  }
+
+  // Energy counters per channel (only when sensors configured)
   for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
     if (this->energy_sensors_[i] != nullptr) {
       if (this->read_register_(REG_CF_CNT_1 + i, raw)) {
@@ -145,7 +150,7 @@ void BL0910Component::update() {
     }
   }
 
-  // Total energy counter: CF_CNT_TOTAL at 0x39
+  // Total energy counter (only when sensor configured)
   if (this->total_energy_sensor_ != nullptr) {
     if (this->read_register_(REG_CF_CNT_TOTAL, raw)) {
       uint32_t delta;
@@ -162,24 +167,24 @@ void BL0910Component::update() {
     }
   }
 
-  // Line frequency: PERIOD at 0x4E
-  if (this->frequency_sensor_ != nullptr) {
-    if (this->read_register_(REG_PERIOD, raw)) {
-      raw &= 0x0FFFFF;  // 20-bit value
-      if (raw > 0) {
-        this->frequency_sensor_->publish_state(this->convert_frequency_(raw));
-      }
+  // Line frequency -- always read and cache
+  if (this->read_register_(REG_PERIOD, raw)) {
+    raw &= 0x0FFFFF;  // 20-bit value
+    if (raw > 0) {
+      this->cached_frequency_ = this->convert_frequency_(raw);
+      if (this->frequency_sensor_ != nullptr)
+        this->frequency_sensor_->publish_state(this->cached_frequency_);
     }
   }
 
-  // Internal temperature: TPS1 at 0x5E
+  // Internal temperature (only when sensor configured)
   if (this->temperature_sensor_ != nullptr) {
     if (this->read_register_(REG_TPS1, raw)) {
       this->temperature_sensor_->publish_state(this->convert_temperature_(raw));
     }
   }
 
-  // Power factor: PF at 0x4A (signed 24-bit, for VAR_I_SEL selected channel only)
+  // Power factor (only when sensors configured, single-channel via VAR_I_SEL)
   bool need_pf = false;
   for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
     if (this->power_factor_sensors_[i] != nullptr) {
@@ -333,6 +338,33 @@ bool BL0910Component::configure_mode_() {
 
   ESP_LOGD(TAG, "MODE register = 0x%06X", mode_val);
   return this->write_register_(REG_MODE, mode_val);
+}
+
+// --- Public Reset Methods ---
+
+void BL0910Component::hardware_reset() {
+  ESP_LOGI(TAG, "Performing hardware reset");
+  this->initialized_ = false;
+  this->hardware_reset_();
+  if (!this->chip_init_()) {
+    ESP_LOGE(TAG, "Reinitialization after hardware reset failed");
+    this->mark_failed();
+  }
+}
+
+void BL0910Component::reinitialize() {
+  ESP_LOGI(TAG, "Reinitializing (chip_init only)");
+  this->initialized_ = false;
+  if (!this->chip_init_()) {
+    ESP_LOGE(TAG, "Reinitialization failed");
+    this->mark_failed();
+  }
+}
+
+bool BL0910Component::write_irq_mask(uint32_t mask) {
+  if (!this->write_register_(REG_USR_WRPROT, USR_WRPROT_UNLOCK))
+    return false;
+  return this->write_register_(REG_MASK1, mask);
 }
 
 // --- Value Conversions ---

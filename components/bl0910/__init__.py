@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome import pins
+from esphome import automation, pins
 from esphome.components import spi
 from esphome.const import CONF_ID, CONF_MODE
 
@@ -25,6 +25,8 @@ MEASUREMENT_MODES = {
     "5U5I": MeasurementMode.MODE_5U5I,
     "3U6I": MeasurementMode.MODE_3U6I,
 }
+
+ResetAction = bl0910_ns.class_("ResetAction", automation.Action)
 
 CONF_RESET_PIN = "reset_pin"
 CONF_IRQ_PIN = "irq_pin"
@@ -76,3 +78,17 @@ async def to_code(config):
     cg.add(var.set_current_reference(config[CONF_CURRENT_REFERENCE]))
     cg.add(var.set_power_reference(config[CONF_POWER_REFERENCE]))
     cg.add(var.set_energy_reference(config[CONF_ENERGY_REFERENCE]))
+
+
+RESET_ACTION_SCHEMA = automation.maybe_simple_id(
+    {
+        cv.GenerateID(): cv.use_id(BL0910Component),
+    }
+)
+
+
+@automation.register_action("bl0910.reset", ResetAction, RESET_ACTION_SCHEMA)
+async def bl0910_reset_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg)
+    await cg.register_parented(var, config[CONF_ID])
+    return var
