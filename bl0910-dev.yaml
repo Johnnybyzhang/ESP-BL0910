@@ -61,8 +61,16 @@ bl0910:
   irq_pin: GPIO38
   mode: 1U10I
   line_frequency: 50Hz
-  # Calibration constants - adjust these based on your hardware
-  # For typical 1mOhm shunt and 1k:1M voltage divider:
+  voltage:
+    load_res: 2000000
+    sample_res: 510
+    sample_ratio: 1.0
+    pga_gain: 1
+  current:
+    sample_res: 0.001
+    sample_ratio: 1.0
+    pga_gain: 1
+  cfdiv: 0x010
   voltage_reference: 1.0
   current_reference: 1.0
   power_reference: 1.0
@@ -93,6 +101,9 @@ sensor:
     
     # Channel 1
     channel_1:
+      voltage:
+        name: "Channel 1 Voltage"
+        id: ch1_voltage
       current:
         name: "Channel 1 Current"
         id: ch1_current

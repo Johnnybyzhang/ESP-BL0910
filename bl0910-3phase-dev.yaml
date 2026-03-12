@@ -56,6 +56,16 @@ bl0910:
     cs_pin: GPIO34
     mode: 1U10I
     line_frequency: 50Hz
+    voltage:
+      load_res: 2000000
+      sample_res: 510
+      sample_ratio: 1.0
+      pga_gain: 1
+    current:
+      sample_res: 0.001
+      sample_ratio: 1.0
+      pga_gain: 1
+    cfdiv: 0x010
     voltage_reference: 1.0
     current_reference: 1.0
     power_reference: 1.0
@@ -67,6 +77,16 @@ bl0910:
     cs_pin: GPIO40
     mode: 1U10I
     line_frequency: 50Hz
+    voltage:
+      load_res: 2000000
+      sample_res: 510
+      sample_ratio: 1.0
+      pga_gain: 1
+    current:
+      sample_res: 0.001
+      sample_ratio: 1.0
+      pga_gain: 1
+    cfdiv: 0x010
     voltage_reference: 1.0
     current_reference: 1.0
     power_reference: 1.0
@@ -78,6 +98,16 @@ bl0910:
     cs_pin: GPIO41
     mode: 1U10I
     line_frequency: 50Hz
+    voltage:
+      load_res: 2000000
+      sample_res: 510
+      sample_ratio: 1.0
+      pga_gain: 1
+    current:
+      sample_res: 0.001
+      sample_ratio: 1.0
+      pga_gain: 1
+    cfdiv: 0x010
     voltage_reference: 1.0
     current_reference: 1.0
     power_reference: 1.0
