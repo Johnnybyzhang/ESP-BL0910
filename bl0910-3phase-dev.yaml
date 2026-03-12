@@ -1,0 +1,192 @@
+esphome:
+  name: bl0910-3phase-dev
+
+esp32:
+  variant: esp32s3
+  board: esp32-s3-devkitc1-n8r8
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: quad
+  speed: 80MHz
+
+logger:
+  level: DEBUG
+  logs:
+    bl0910: DEBUG
+    bl0910_3phase: DEBUG
+
+api:
+  encryption:
+    key: "2O+43ybWqbMFLMFxpAlnTpYdjs32z+Anbu3DYCdy1eE="
+
+ota:
+  - platform: esphome
+    password: "2O+43ybWqbMFLMFxpAlnTpYdjs32z+Anbu3DYCdy1eE="
+
+ethernet:
+  type: W5500
+  clk_pin: GPIO12
+  mosi_pin: GPIO11
+  miso_pin: GPIO13
+  cs_pin: GPIO10
+  interrupt_pin: GPIO14
+  reset_pin: GPIO15
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+# SPI bus shared by all 3 BL0910 chips
+spi:
+  - id: bl0910_spi
+    clk_pin: GPIO36
+    mosi_pin: GPIO35
+    miso_pin: GPIO37
+    interface: spi3
+
+# --- Three BL0910 chips, one per phase ---
+# Reset pins are managed by the bl0910_3phase module (shared GPIO33)
+bl0910:
+  - id: phase_a_chip
+    spi_id: bl0910_spi
+    cs_pin: GPIO34
+    mode: 1U10I
+    line_frequency: 50Hz
+    voltage_reference: 1.0
+    current_reference: 1.0
+    power_reference: 1.0
+    energy_reference: 1.0
+    update_interval: 5s
+
+  - id: phase_b_chip
+    spi_id: bl0910_spi
+    cs_pin: GPIO40
+    mode: 1U10I
+    line_frequency: 50Hz
+    voltage_reference: 1.0
+    current_reference: 1.0
+    power_reference: 1.0
+    energy_reference: 1.0
+    update_interval: 5s
+
+  - id: phase_c_chip
+    spi_id: bl0910_spi
+    cs_pin: GPIO41
+    mode: 1U10I
+    line_frequency: 50Hz
+    voltage_reference: 1.0
+    current_reference: 1.0
+    power_reference: 1.0
+    energy_reference: 1.0
+    update_interval: 5s
+
+# --- 3-Phase coordinator ---
+bl0910_3phase:
+  id: three_phase_meter
+  phase_a: phase_a_chip
+  phase_b: phase_b_chip
+  phase_c: phase_c_chip
+  line_frequency: 50Hz
+
+  # Shared NRST pin (one wire to all 3 chips)
+  reset_pin: GPIO33
+
+  # IRQ1 pins (primary) -- configured via MASK1 for voltage zero-crossing
+  irq1_a_pin: GPIO38
+  irq1_b_pin: GPIO39
+  irq1_c_pin: GPIO42
+
+  # IRQ2 pins (alternative, uncomment if wired instead of IRQ1)
+  # irq2_a_pin: GPIO48
+  # irq2_b_pin: GPIO21
+  # irq2_c_pin: GPIO47
+
+  update_interval: 5s
+
+# --- Per-phase sensors (from individual BL0910 chips) ---
+sensor:
+  - platform: bl0910
+    bl0910_id: phase_a_chip
+    voltage:
+      name: "Phase A Voltage"
+    channel_1:
+      current:
+        name: "Phase A Ch1 Current"
+      power:
+        name: "Phase A Ch1 Power"
+      energy:
+        name: "Phase A Ch1 Energy"
+
+  - platform: bl0910
+    bl0910_id: phase_b_chip
+    voltage:
+      name: "Phase B Voltage"
+    channel_1:
+      current:
+        name: "Phase B Ch1 Current"
+      power:
+        name: "Phase B Ch1 Power"
+      energy:
+        name: "Phase B Ch1 Energy"
+
+  - platform: bl0910
+    bl0910_id: phase_c_chip
+    voltage:
+      name: "Phase C Voltage"
+    channel_1:
+      current:
+        name: "Phase C Ch1 Current"
+      power:
+        name: "Phase C Ch1 Power"
+      energy:
+        name: "Phase C Ch1 Energy"
+
+  # --- 3-Phase computed sensors ---
+  - platform: bl0910_3phase
+    bl0910_3phase_id: three_phase_meter
+    total_active_power:
+      name: "3-Phase Total Active Power"
+    total_reactive_power:
+      name: "3-Phase Total Reactive Power"
+    total_apparent_power:
+      name: "3-Phase Total Apparent Power"
+    system_power_factor:
+      name: "3-Phase Power Factor"
+    frequency:
+      name: "Grid Frequency"
+    phase_angle_ab:
+      name: "Phase Angle A-B"
+    phase_angle_bc:
+      name: "Phase Angle B-C"
+    phase_angle_ca:
+      name: "Phase Angle C-A"
+    voltage_unbalance:
+      name: "Voltage Unbalance"
+    line_voltage_ab:
+      name: "Line Voltage A-B"
+    line_voltage_bc:
+      name: "Line Voltage B-C"
+    line_voltage_ca:
+      name: "Line Voltage C-A"
+
+text_sensor:
+  - platform: bl0910_3phase
+    bl0910_3phase_id: three_phase_meter
+    phase_sequence:
+      name: "Phase Sequence"
+
+# Hardware reset button (example of bl0910.reset action)
+button:
+  - platform: template
+    name: "Reset All BL0910 Chips"
+    on_press:
+      - bl0910.reset:
+          id: phase_a_chip
+      - bl0910.reset:
+          id: phase_b_chip
+      - bl0910.reset:
+          id: phase_c_chip
