@@ -95,6 +95,11 @@ static const uint8_t REG_TPS2 = 0x5F;      // External temperature
 
 static const uint8_t REG_GAIN1 = 0x60;     // PGA gain channels 1-5 + voltage
 static const uint8_t REG_GAIN2 = 0x61;     // PGA gain channels 6-10
+static const uint8_t REG_RMSGN_1 = 0x6C;
+static const uint8_t REG_RMSOS_1 = 0x77;
+static const uint8_t REG_WATTGN_1 = 0xB6;
+static const uint8_t REG_WATTOS_1 = 0xC0;
+static const uint8_t REG_CFDIV = 0xCE;
 
 static const uint8_t REG_MODE1 = 0x96;     // Mode register 1
 static const uint8_t REG_MODE = 0x98;      // Mode register
@@ -130,6 +135,13 @@ enum MeasurementMode : uint8_t {
   MODE_3U6I = 2,
 };
 
+struct FrontendConfig {
+  float load_res{0.0f};
+  float sample_res{1.0f};
+  float sample_ratio{1.0f};
+  uint8_t pga_gain{1};
+};
+
 class BL0910Component : public PollingComponent,
                         public spi::SPIDevice<spi::BIT_ORDER_MSB_FIRST, spi::CLOCK_POLARITY_LOW,
                                               spi::CLOCK_PHASE_TRAILING, spi::DATA_RATE_1MHZ> {
@@ -150,6 +162,14 @@ class BL0910Component : public PollingComponent,
   void set_current_reference(float ref) { this->current_reference_ = ref; }
   void set_power_reference(float ref) { this->power_reference_ = ref; }
   void set_energy_reference(float ref) { this->energy_reference_ = ref; }
+  void set_voltage_load_res(float value);
+  void set_voltage_sample_res(float value);
+  void set_voltage_sample_ratio(float value);
+  void set_voltage_pga_gain(uint8_t value);
+  void set_current_sample_res(float value);
+  void set_current_sample_ratio(float value);
+  void set_current_pga_gain(uint8_t value);
+  void set_cfdiv(uint16_t value) { this->cfdiv_ = value & 0x0FFF; }
 
   // Sensor setters - global sensors
   void set_voltage_sensor(sensor::Sensor *sensor) { this->voltage_sensor_ = sensor; }
@@ -157,6 +177,10 @@ class BL0910Component : public PollingComponent,
   void set_temperature_sensor(sensor::Sensor *sensor) { this->temperature_sensor_ = sensor; }
   void set_total_power_sensor(sensor::Sensor *sensor) { this->total_power_sensor_ = sensor; }
   void set_total_energy_sensor(sensor::Sensor *sensor) { this->total_energy_sensor_ = sensor; }
+  void set_channel_voltage_sensor(uint8_t channel, sensor::Sensor *sensor) {
+    if (channel < NUM_CHANNELS)
+      this->voltage_channel_sensors_[channel] = sensor;
+  }
 
   // Sensor setters - per channel
   void set_current_sensor(uint8_t channel, sensor::Sensor *sensor) {
@@ -184,6 +208,9 @@ class BL0910Component : public PollingComponent,
   // Cached measurement getters (populated every update cycle)
   bool is_initialized() const { return this->initialized_; }
   float get_voltage_rms() const { return this->cached_voltage_rms_; }
+  float get_voltage_rms(uint8_t channel) const {
+    return (channel < NUM_CHANNELS) ? this->cached_voltage_rms_by_channel_[channel] : NAN;
+  }
   float get_current_rms(uint8_t channel) const {
     return (channel < NUM_CHANNELS) ? this->cached_current_rms_[channel] : NAN;
   }
@@ -198,11 +225,24 @@ class BL0910Component : public PollingComponent,
   bool read_register_(uint8_t reg, uint32_t &value);
   bool write_register_(uint8_t reg, uint32_t value);
   void reset_spi_();
+  bool write_user_register_(uint8_t reg, uint32_t value);
 
   // Initialization methods
   void hardware_reset_();
   bool chip_init_();
   bool configure_mode_();
+  bool apply_calibration_();
+  void recalculate_scales_();
+
+  // Mode helpers
+  bool is_valid_measurement_channel_(uint8_t channel) const;
+  int8_t get_current_input_index_(uint8_t channel) const;
+  int8_t get_voltage_input_index_(uint8_t channel) const;
+  bool is_current_input_(uint8_t input_index) const;
+  bool is_voltage_input_(uint8_t input_index) const;
+  int8_t get_primary_voltage_input_index_() const;
+  static uint8_t encode_pga_gain_(uint8_t gain);
+  static int16_t gain_to_register_(float gain);
 
   // Value conversion methods
   float convert_voltage_(uint32_t raw);
@@ -224,6 +264,12 @@ class BL0910Component : public PollingComponent,
   float current_reference_{1.0f};
   float power_reference_{1.0f};
   float energy_reference_{1.0f};
+  FrontendConfig voltage_frontend_{2000000.0f, 510.0f, 1.0f, 1};
+  FrontendConfig current_frontend_{0.0f, 0.001f, 1.0f, 1};
+  uint16_t cfdiv_{0x010};
+  float voltage_scale_{1.0f};
+  float current_scale_{1.0f};
+  float power_scale_{1.0f};
 
   // Global sensors
   sensor::Sensor *voltage_sensor_{nullptr};
@@ -234,6 +280,7 @@ class BL0910Component : public PollingComponent,
 
   // Per-channel sensors (10 channels)
   sensor::Sensor *current_sensors_[NUM_CHANNELS]{nullptr};
+  sensor::Sensor *voltage_channel_sensors_[NUM_CHANNELS]{nullptr};
   sensor::Sensor *power_sensors_[NUM_CHANNELS]{nullptr};
   sensor::Sensor *energy_sensors_[NUM_CHANNELS]{nullptr};
   sensor::Sensor *power_factor_sensors_[NUM_CHANNELS]{nullptr};
@@ -246,6 +293,7 @@ class BL0910Component : public PollingComponent,
 
   // Cached measurements (always populated in update, regardless of sensor config)
   float cached_voltage_rms_{NAN};
+  float cached_voltage_rms_by_channel_[NUM_CHANNELS]{};
   float cached_current_rms_[NUM_CHANNELS]{};
   float cached_active_power_[NUM_CHANNELS]{};
   float cached_total_active_power_{NAN};
