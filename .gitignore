@@ -5,3 +5,7 @@
 /secrets.yaml
 /Datasheet/
 /.cursor/
+
+# Python cache artifacts
+**/__pycache__/
+*.pyc
