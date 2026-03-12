@@ -35,6 +35,12 @@ CHANNEL_KEYS = [f"channel_{i}" for i in range(1, 11)]
 
 CHANNEL_SCHEMA = cv.Schema(
     {
+        cv.Optional(CONF_VOLTAGE): sensor.sensor_schema(
+            unit_of_measurement=UNIT_VOLT,
+            accuracy_decimals=1,
+            device_class=DEVICE_CLASS_VOLTAGE,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
         cv.Optional(CONF_CURRENT): sensor.sensor_schema(
             unit_of_measurement=UNIT_AMPERE,
             accuracy_decimals=3,
@@ -125,6 +131,9 @@ async def to_code(config):
     for i, ch_key in enumerate(CHANNEL_KEYS):
         if ch_key in config:
             ch_conf = config[ch_key]
+            if CONF_VOLTAGE in ch_conf:
+                sens = await sensor.new_sensor(ch_conf[CONF_VOLTAGE])
+                cg.add(hub.set_channel_voltage_sensor(i, sens))
             if CONF_CURRENT in ch_conf:
                 sens = await sensor.new_sensor(ch_conf[CONF_CURRENT])
                 cg.add(hub.set_current_sensor(i, sens))

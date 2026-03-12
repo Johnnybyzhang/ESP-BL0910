@@ -35,6 +35,32 @@ CONF_VOLTAGE_REFERENCE = "voltage_reference"
 CONF_CURRENT_REFERENCE = "current_reference"
 CONF_POWER_REFERENCE = "power_reference"
 CONF_ENERGY_REFERENCE = "energy_reference"
+CONF_VOLTAGE = "voltage"
+CONF_CURRENT = "current"
+CONF_LOAD_RES = "load_res"
+CONF_SAMPLE_RES = "sample_res"
+CONF_SAMPLE_RATIO = "sample_ratio"
+CONF_PGA_GAIN = "pga_gain"
+CONF_CFDIV = "cfdiv"
+
+PGA_GAINS = cv.one_of(1, 2, 8, 16, int=True)
+
+VOLTAGE_FRONTEND_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_LOAD_RES, default=2000000.0): cv.positive_float,
+        cv.Optional(CONF_SAMPLE_RES, default=510.0): cv.positive_float,
+        cv.Optional(CONF_SAMPLE_RATIO, default=1.0): cv.positive_float,
+        cv.Optional(CONF_PGA_GAIN, default=1): PGA_GAINS,
+    }
+)
+
+CURRENT_FRONTEND_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_SAMPLE_RES, default=0.001): cv.positive_float,
+        cv.Optional(CONF_SAMPLE_RATIO, default=1.0): cv.positive_float,
+        cv.Optional(CONF_PGA_GAIN, default=1): PGA_GAINS,
+    }
+)
 
 CONFIG_SCHEMA = (
     cv.Schema(
@@ -48,6 +74,9 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_LINE_FREQUENCY, default="50HZ"): cv.enum(
                 LINE_FREQUENCIES, upper=True
             ),
+            cv.Optional(CONF_VOLTAGE, default={}): VOLTAGE_FRONTEND_SCHEMA,
+            cv.Optional(CONF_CURRENT, default={}): CURRENT_FRONTEND_SCHEMA,
+            cv.Optional(CONF_CFDIV, default=0x010): cv.int_range(min=0, max=0xFFF),
             cv.Optional(CONF_VOLTAGE_REFERENCE, default=1.0): cv.float_,
             cv.Optional(CONF_CURRENT_REFERENCE, default=1.0): cv.float_,
             cv.Optional(CONF_POWER_REFERENCE, default=1.0): cv.float_,
@@ -74,6 +103,14 @@ async def to_code(config):
 
     cg.add(var.set_mode(config[CONF_MODE]))
     cg.add(var.set_line_frequency(config[CONF_LINE_FREQUENCY]))
+    cg.add(var.set_voltage_load_res(config[CONF_VOLTAGE][CONF_LOAD_RES]))
+    cg.add(var.set_voltage_sample_res(config[CONF_VOLTAGE][CONF_SAMPLE_RES]))
+    cg.add(var.set_voltage_sample_ratio(config[CONF_VOLTAGE][CONF_SAMPLE_RATIO]))
+    cg.add(var.set_voltage_pga_gain(config[CONF_VOLTAGE][CONF_PGA_GAIN]))
+    cg.add(var.set_current_sample_res(config[CONF_CURRENT][CONF_SAMPLE_RES]))
+    cg.add(var.set_current_sample_ratio(config[CONF_CURRENT][CONF_SAMPLE_RATIO]))
+    cg.add(var.set_current_pga_gain(config[CONF_CURRENT][CONF_PGA_GAIN]))
+    cg.add(var.set_cfdiv(config[CONF_CFDIV]))
     cg.add(var.set_voltage_reference(config[CONF_VOLTAGE_REFERENCE]))
     cg.add(var.set_current_reference(config[CONF_CURRENT_REFERENCE]))
     cg.add(var.set_power_reference(config[CONF_POWER_REFERENCE]))
