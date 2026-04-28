@@ -124,7 +124,7 @@ RESET_ACTION_SCHEMA = automation.maybe_simple_id(
 )
 
 
-@automation.register_action("bl0910.reset", ResetAction, RESET_ACTION_SCHEMA)
+@automation.register_action("bl0910.reset", ResetAction, RESET_ACTION_SCHEMA, synchronous=True)
 async def bl0910_reset_to_code(config, action_id, template_arg, args):
     var = cg.new_Pvariable(action_id, template_arg)
     await cg.register_parented(var, config[CONF_ID])

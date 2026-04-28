@@ -1,6 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sensor
+from esphome.final_validate import full_config
 from esphome.const import (
     CONF_CURRENT,
     CONF_ENERGY,
@@ -25,13 +26,18 @@ from esphome.const import (
     UNIT_VOLT,
     UNIT_WATT,
 )
-from . import BL0910Component
+from . import BL0910Component, CONF_MODE
 
 CONF_BL0910_ID = "bl0910_id"
 CONF_TOTAL_POWER = "total_power"
 CONF_TOTAL_ENERGY = "total_energy"
 
 CHANNEL_KEYS = [f"channel_{i}" for i in range(1, 11)]
+MODE_ALLOWED_VOLTAGE_CHANNELS = {
+    "1U10I": set(range(1, 11)),
+    "5U5I": {1, 2, 3, 4, 5},
+    "3U6I": {2, 3, 4, 7, 8, 9},
+}
 
 CHANNEL_SCHEMA = cv.Schema(
     {
@@ -103,6 +109,30 @@ CONFIG_SCHEMA = cv.Schema(
         **{cv.Optional(ch_key): CHANNEL_SCHEMA for ch_key in CHANNEL_KEYS},
     }
 )
+
+
+def _validate_channel_voltage_support(config):
+    fconf = full_config.get()
+    hub_config = fconf.get_config_for_path(fconf.get_path_for_id(config[CONF_BL0910_ID])[:-1])
+    mode = str(hub_config[CONF_MODE])
+    allowed_channels = MODE_ALLOWED_VOLTAGE_CHANNELS.get(mode, MODE_ALLOWED_VOLTAGE_CHANNELS["1U10I"])
+
+    for index, channel_key in enumerate(CHANNEL_KEYS, start=1):
+        channel_config = config.get(channel_key)
+        if channel_config is None or CONF_VOLTAGE not in channel_config:
+            continue
+        if index in allowed_channels:
+            continue
+        allowed_list = ", ".join(f"channel_{channel}" for channel in sorted(allowed_channels))
+        raise cv.Invalid(
+            f"{channel_key}.voltage is not available in {mode}; supported per-channel voltage sensors are {allowed_list}.",
+            path=[channel_key, CONF_VOLTAGE],
+        )
+
+    return config
+
+
+FINAL_VALIDATE_SCHEMA = _validate_channel_voltage_support
 
 
 async def to_code(config):
